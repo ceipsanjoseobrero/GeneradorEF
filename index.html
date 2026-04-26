@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>EduFísica PRO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{margin:0;font-family:system-ui;background:#0f172a;color:#e5e7eb;}
+header{padding:15px;text-align:center;background:linear-gradient(135deg,#6366f1,#3b82f6);}
+.container{padding:20px;max-width:1200px;margin:auto;}
+.card{background:#1e293b;padding:15px;border-radius:12px;margin-bottom:15px;}
+button{padding:8px;border:none;border-radius:8px;background:#6366f1;color:white;cursor:pointer;margin:3px;}
+input,select{padding:6px;border-radius:6px;border:none;background:#0f172a;color:white;margin:3px;}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.day{background:#334155;padding:10px;text-align:center;cursor:pointer;}
+.hidden{display:none;}
+.juegoItem{padding:5px;border-bottom:1px solid #334155;}
+</style>
+</head>
+
+<body>
+
+<header>🏫 EduFísica PRO</header>
+
+<div class="container">
+
+<div class="card" id="login">
+<button onclick="login()">🔐 Iniciar sesión con Google</button>
+</div>
+
+<div id="app" class="hidden">
+
+<div class="card">
+<button onclick="vista('gen')">Generador</button>
+<button onclick="vista('cal')">Calendario</button>
+<button onclick="vista('hor')">Horario</button>
+<button onclick="vista('juegos')">Juegos</button>
+<button onclick="vista('admin')">Admin</button>
+</div>
+
+<div id="gen" class="card">
+<h3>Generador IA + LOMLOE</h3>
+<input id="titulo" placeholder="Título">
+<input id="curso" placeholder="Curso">
+<button onclick="generar()">Generar</button>
+<pre id="out"></pre>
+</div>
+
+<div id="cal" class="card hidden">
+<h3>Calendario</h3>
+<div id="grid" class="grid"></div>
+<pre id="detalle"></pre>
+</div>
+
+<div id="hor" class="card hidden">
+<h3>Horario en tiempo real</h3>
+<div id="tabla"></div>
+</div>
+
+<div id="juegos" class="card hidden">
+<h3>Repositorio de juegos</h3>
+<input id="filtroJuego" placeholder="Buscar..." onkeyup="filtrarJuegos()">
+<div id="listaJuegos"></div>
+</div>
+
+<div id="admin" class="card hidden">
+<h3>Admin</h3>
+<input id="nuevoCurso" placeholder="Nuevo curso">
+<button onclick="addCursoRT()">Añadir curso</button>
+<input id="nuevaHora" placeholder="Nueva hora">
+<button onclick="addHoraRT()">Añadir hora</button>
+</div>
+
+</div>
+</div>
+
+<script type="module">
+
+// 🔥 FIREBASE
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCdRC1dWiUwzeJSVneafZ9aFMUG_hdqx2E",
+  authDomain: "generadoref.firebaseapp.com",
+  projectId: "generadoref",
+  storageBucket: "generadoref.firebasestorage.app",
+  messagingSenderId: "766730118731",
+  appId: "1:766730118731:web:02c3077caf9c9fe8554fce"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const rtdb = getDatabase(app);
+
+// 🔐 LOGIN
+window.login = function(){
+  const provider = new GoogleAuthProvider();
+  signInWithPopup(auth, provider).then(()=>{
+    document.getElementById("login").style.display="none";
+    document.getElementById("app").classList.remove("hidden");
+  });
+}
+
+// 📂 VISTAS
+window.vista = function(v){
+  ["gen","cal","hor","juegos","admin"].forEach(x=>{
+    document.getElementById(x).classList.add("hidden");
+  });
+  document.getElementById(v).classList.remove("hidden");
+}
+
+// 🧠 GENERADOR
+window.generar = async function(){
+  const texto = `
+${titulo.value}
+
+Curso: ${curso.value}
+
+LOMLOE:
+- Participación activa
+- Toma de decisiones
+
+Sesión:
+Calentamiento + juego + vuelta a la calma
+`;
+  out.textContent = texto;
+
+  await addDoc(collection(db,"sesiones"),{
+    texto,
+    dia:new Date().getDate()
+  });
+}
+
+// 📅 CALENDARIO
+async function cargarCalendario(){
+  grid.innerHTML="";
+  for(let i=1;i<=30;i++){
+    const d=document.createElement("div");
+    d.className="day";
+    d.textContent=i;
+
+    d.onclick=async()=>{
+      const snap = await getDocs(collection(db,"sesiones"));
+      let txt="";
+      snap.forEach(doc=>{
+        if(doc.data().dia===i) txt+=doc.data().texto+"\n\n";
+      });
+      detalle.textContent=txt||"Sin sesiones";
+    };
+
+    grid.appendChild(d);
+  }
+}
+
+// ⏰ HORARIO TIEMPO REAL
+function escucharHorario(){
+  onValue(ref(rtdb,'horario'), snap=>{
+    const data = snap.val() || {horas:["8:30"], cursos:["1º ESO"]};
+
+    let html="<table>";
+    data.horas.forEach(h=>{
+      html+="<tr><td>"+h+"</td>";
+      data.cursos.forEach(c=>{
+        html+=`<td contenteditable="true" onblur="guardarCambio('${h}',this.innerText)">${c}</td>`;
+      });
+      html+="</tr>";
+    });
+    html+="</table>";
+
+    tabla.innerHTML=html;
+  });
+}
+
+window.guardarCambio = function(hora,valor){
+  onValue(ref(rtdb,'horario'), snap=>{
+    let data = snap.val();
+    if(!data) return;
+    data.cursos[0]=valor;
+    set(ref(rtdb,'horario'), data);
+  },{onlyOnce:true});
+}
+
+window.addCursoRT = function(){
+  onValue(ref(rtdb,'horario'), snap=>{
+    let data = snap.val()||{horas:[],cursos:[]};
+    data.cursos.push(nuevoCurso.value);
+    set(ref(rtdb,'horario'), data);
+  },{onlyOnce:true});
+}
+
+window.addHoraRT = function(){
+  onValue(ref(rtdb,'horario'), snap=>{
+    let data = snap.val()||{horas:[],cursos:[]};
+    data.horas.push(nuevaHora.value);
+    set(ref(rtdb,'horario'), data);
+  },{onlyOnce:true});
+}
+
+// 🎮 300 JUEGOS
+const categorias=["cooperativo","oposición","condicional","habilidad","estrategia"];
+const juegosBase=[];
+for(let i=1;i<=300;i++){
+  juegosBase.push({nombre:"Juego "+i,tipo:categorias[i%categorias.length]});
+}
+
+async function cargarJuegosIniciales(){
+  const snap=await getDocs(collection(db,"juegos"));
+  if(snap.empty){
+    for(const j of juegosBase){
+      await addDoc(collection(db,"juegos"), j);
+    }
+  }
+  cargarJuegos();
+}
+
+async function cargarJuegos(){
+  listaJuegos.innerHTML="";
+  const snap=await getDocs(collection(db,"juegos"));
+  snap.forEach(doc=>{
+    const j=doc.data();
+    listaJuegos.innerHTML+=`<div class="juegoItem">${j.nombre} (${j.tipo})</div>`;
+  });
+}
+
+window.filtrarJuegos = function(){
+  const f=filtroJuego.value.toLowerCase();
+  document.querySelectorAll(".juegoItem").forEach(el=>{
+    el.style.display = el.textContent.toLowerCase().includes(f) ? "block":"none";
+  });
+}
+
+// INIT
+cargarCalendario();
+cargarJuegosIniciales();
+escucharHorario();
+
+</script>
+
+</body>
+</html>
